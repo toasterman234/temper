@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Temper.AgentWork" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EnumType Name="WorkControllerStatus">
+        <Member Name="Proposed" Value="0"/>
+        <Member Name="Approved" Value="1"/>
+        <Member Name="Active" Value="2"/>
+        <Member Name="Blocked" Value="3"/>
+        <Member Name="Awaiting" Value="4"/>
+        <Member Name="Completed" Value="5"/>
+        <Member Name="Rejected" Value="6"/>
+      </EnumType>
+      <EntityType Name="WorkController">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="CanonicalIssueRef" Type="Edm.String"/>
+        <Property Name="Title" Type="Edm.String" Nullable="false"/>
+        <Property Name="SourceRef" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Temper.AgentWork.WorkControllerStatus" Nullable="false"/>
+        <Property Name="OwnerRef" Type="Edm.String" Nullable="false"/>
+        <Property Name="NextAction" Type="Edm.String" Nullable="false"/>
+        <Property Name="WakeCondition" Type="Edm.String"/>
+        <Property Name="ExpectedVersion" Type="Edm.Int64" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="Container">
+        <EntitySet Name="WorkControllers" EntityType="Temper.AgentWork.WorkController"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
