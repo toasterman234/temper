@@ -180,6 +180,101 @@ A valid first technical proof (only **after approved promotion to implementation
 7. Who may promote this Explore to approved Work and authorize any runtime/deployment/effectful integrations?
 
 
+
+## First vertical proof contract (proposal only)
+
+This section is a **bounded acceptance contract for a future approved pilot**, not authorization to implement it. The objective is to demonstrate **one actually governed lifecycle** with **three outcomes**: reuse existing Work instead of creating a duplicate; keep unresolved Work visible with a responsible next move; deny completion without independent verification.
+
+### Canonical-type-aware model
+
+Read directly against the current LinkML Structural-v2 source rather than treating every product concept as a new schema class:
+
+| Product concept | Existing authoritative shape / important nuance |
+| --- | --- |
+| Project | \`Project\` has \`ProjectLifecycle\`: proposed / active / paused / completed / cancelled |
+| Work / Case / Explore / ChangeProposal | \`Issue\` + classifiers/profile, not separate root classes by default. \`Issue\` has \`IssueBaseLifecycle\`, \`WorkLifecycle\` (proposed / active / awaiting / blocked / completed / cancelled) and \`CaseLifecycle\`; don't put invented statuses into \`work_lifecycle\` |
+| Agent | \`Actor\` + capabilities/roles/tools; native session traces are source-linked Run/Event evidence, not an automatic new Agent class |
+| Plan / approval | \`Plan\`, \`Gate\`, \`Decision\`; an existing Decision must have correct subject, scope and authority, not just status='accepted' |
+| Action and effect | \`ActionRequest\`, \`Run\`, \`Result\`, \`Event\` and \`Change\`; \`RunStatus\` is queued/running/succeeded/failed/cancelled, not a work lifecycle |
+| Closure evidence | \`Evidence\`, \`Verification\`, \`Outcome\`; receipt URI, successful response, and passed verification are distinct |
+| Dependencies and conflicts | Versioned \`Relationship\` instances with controlled relationship_type and provenance, plus native typed refs. Candidate semantic similarity edges remain provisional until accepted |
+
+Sources (read from live default GitHub main, **not** assumed deployed): [LinkML Structural-v2](https://github.com/toasterman234/master-repo-0.1/blob/main/registry/model/schema.yaml), [semantic invariants](https://github.com/toasterman234/master-repo-0.1/blob/main/registry/meta/semantic-invariants.yaml), [progress contract](https://github.com/toasterman234/master-repo-0.1/blob/main/runtime/contracts/progress-controller-v0.1.yaml), [transition contract](https://github.com/toasterman234/master-repo-0.1/blob/main/runtime/contracts/transition-controller-v0.1.yaml).
+
+Temper's own pilot automaton can model **request/decision states** such as \`Proposed\`, \`HistoryChecked\`, \`NeedsReview\`, \`Authorized\`, \`Applied\`, \`ReadbackVerified\`, \`Denied\` without changing canonical Issue statuses. Any allowed operation must still call the existing authoritative state mutation boundary and reconcile the results.
+
+### Four proposed user-facing operations
+
+| Operation | What the caller provides | Returned decision | Trusted boundary |
+| --- | --- | --- | --- |
+| \`inspect_portfolio\` | agent/session identity, scoped source selections | current/open/blocked work + freshness + next actions + exact source links | Read-only, no semantic transition; reports unknown/stale |
+| \`propose_work\` | goal, scope, source event, parent, stable request key | reuse/link/extend/conflict-review/new-proposal with source-linked matches | Read-first history and exact-ID check; **no unreviewed direct creation** |
+| \`advance_work\` | existing canonical work ref, expected version, action, decision/gate/evidence refs | allow/deny; on eligible command request *existing* canonical mutation path and read back | IOA transition + Cedar actor permissions + actual target CAS/idempotency + result witness |
+| \`verify_and_close\` | work ID, criteria, committed artifact refs, independent verification ref, expected version | closed / still open / missing evidence / discrepancy / blocked | Do not close just because run succeeded or a receipt exists |
+
+Operations above are **proposed APIs**, not names existing in Temper, the master repo, or any running service.
+
+### Exact intake resolution and sprawl classifications
+
+Prefer deterministic exact matching first, batch/indexed search over sources second, optional semantic similarity only for **suggestions**. Persist the resolution with who/what/how it was decided.
+
+| History result | Proposed disposition | Side effect |
+| --- | --- | --- |
+| Exact stable ID or same idempotency key | \`REUSE_EXISTING\` | No duplicate object |
+| Active linked work with identical governed intent, source-backed | \`ATTACH_OR_RESUME\` | Link source/request and owner only through approved path |
+| Similar work with material scope differences | \`RELATED_DISTINCT\` | Suggest link; don't merge automatically |
+| Conflicting implementation/Decision or ambiguous authority | \`HOLD_FOR_REVIEW\` | Block mutating this scoped action; create or link review Case through authorized intake |
+| Prior rejected/retired/superseded work | \`HISTORY_REVIEW\` | Require new justification/Decision; never silently reactivate |
+| No confirmed match, valid parent and governance prerequisites | \`NEW_PROPOSAL\` | Create **proposal**, not automatic active Project/implementation |
+| Missing source or stale identity/provenance | \`UNKNOWN_SOURCE\` | No false 'no duplicate' assertion; bounded refresh/review |
+
+Do not convert probabilistic similarity to a hard authorization rule. Fail-closed only at a real effect boundary when missing authoritative facts or a versioned rule actually requires them; read-only discovery may return incomplete results with warnings.
+
+### The exact end-to-end demonstration
+
+Synthetic fixture: Source GitHub Issue A is already open for "agent closure without read-back," classified Issue[Work]; a second agent proposes the same objective and another Run reports success with only a new PR URL. (Fixture is illustrative, **not** a statement about the current state of any real user issue.)
+
+1. \`inspect_portfolio\` returns open A with owner, last observed state, source, next action or a visible liveness defect.
+2. \`propose_work\` with the same native ID/idempotency key returns \`REUSE_EXISTING\`; verify **no new canonical Issue**. A similar-but-different request returns a *suggested* relationship with \`RELATED_DISTINCT\`.
+3. Approved agent advances A through its authorized work transition; wrong actor, an Explore-only scope, missing accepted Decision, or stale expected version are rejected **before external mutation**.
+4. A Run \`succeeded\` but the target's authoritative state has not been independently verified. \`verify_and_close\` must deny closure and leave A open, while recording the failed/unknown verification as appropriate.
+5. A later independent verifier checks the target, supplies subject-correct \`Verification\` with passed verdict and evidence, and the authorized mutator commits the terminal transition. Read back exact stored state, history, linked evidence and source projection.
+6. Simulate restart or a lost response after a write; replay with the **same idempotency key**, reconcile effect before retry and prevent second logical mutation.
+
+**Acceptance:** The pilot isn't complete until (a) the duplicate denial has evidence of absent duplicate writes, (b) wrong actor/policy/transition is demonstrably stopped at effect boundary, (c) false-Done is rejected against authoritative source, (d) restart/replay works, and (e) an independent read-back confirms final state and lineage. Passing a Temper \`verify\` command alone cannot satisfy this.
+
+### Control mechanism allocation
+
+| Need | Temper-native candidate | Other component / exact boundary |
+| --- | --- | --- |
+| Legal lifecycle transition | IOA states, guards, invariants | Canonical Transition Controller for authoritative state mutation |
+| Who may approve/execute | Cedar evaluation from **trusted host identity and context** | Actual tool/effect boundary; distinguish policy decision from execution |
+| Entity/action model | CSDL/OData | Existing LinkML canonical types / versioned IDs; adapter must avoid schema drift |
+| Repeated work and old decisions | Not a Temper-native knowledge retrieval capability | Existing Case intake (#76), source search, graph/semantic suggestions with human adjudication |
+| Keep waiting work moving | Temper state alone insufficient | Progress Controller (#27): RUNNABLE/EXECUTING/WAITING/BLOCKED/GATED/TERMINAL; owner/wake/lease/escalation |
+| Source change and recency | Event journal for Temper-owned events | Existing source collectors, source-specific webhook/event work (#310) and reconciliation; no new shadow event bus |
+| Independent claim verification | Tests/invariants for modeled behavior | Live authoritative target read-back; separate persisted Verification |
+| Agent improvement | Temper evolution mechanisms may propose changes | Existing Cases/ASSERT/eval taxonomies; human promotion and tests |
+
+### Specific upstream caution to test
+
+[Temper's oncall remediation example](https://github.com/toasterman234/temper/blob/main/reference-apps/oncall/specs/remediation.ioa.toml) contains \`AutoApprove\`, which sets \`human_approved = true\`. This is suitable as an **example of model behavior**, **not proof of a human-authorized Decision**. A boolean guard can be satisfied by the wrong event or actor if policy and trusted identity are not enforced separately. Pilot negative case: an unprivileged actor invoking any automated-approval route must *not* be able to manufacture human approval or bypass a rejected decision.
+
+### Workload and design limits to measure before authorizing implementation
+
+Start with 5–10 source-backed examples across existing Issues, one intentionally duplicate intake, one ambiguous similar-but-distinct item, one blocked/no-owner case, one stale run and one false-Done case. Record source timestamps and version hashes for every fixture.
+
+Estimate/measure: full-source counts, open-issue counts, typical history lookup latency and candidate counts, peak agent concurrency, real workflow events/day, daily/weekly change frequency, baseline and peak Rust build/verification RSS, steady-state memory/CPU, DB storage growth and API latency. Prefer exact/indexed queries, batched read-back, incremental source deltas; use LLM only on ambiguous candidates and compare quality/latency/cost against deterministic-only intake. Reassess if similarity false-positives, event storage or work history search becomes the bottleneck.
+
+### Decisions still required
+
+- Does Temper sit **in front of** the canonical Transition Controller or operate only as a **shadow verifier** for the pilot? Either choice must name its true authority.
+- Who can approve a new Project/Work vs an innocuous Explore? Define source-backed authority and exceptions, rather than using a broad \`Admin\` role.
+- Which tool routes will be mediated, and which remain ungoverned? Enumerate every alias and count unprotected bypass routes.
+- Is the first interface purely read-only + gated actions, or must the compact dashboard be built before pilot acceptance? Default: API/table first, no UI rebuild.
+- What exact review evidence constitutes **promotion** of this Explore? Until a separate authorized Work/Decision exists, stop at this documented contract.
+
+
 ## Mechanism classification to investigate
 
 | Concern | Candidate enforcement |
