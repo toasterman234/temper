@@ -47,7 +47,7 @@ class FakeGitHub:
         if endpoint=="pulls/358":return pr
         if endpoint=="issues":return [issue,{**pr,"pull_request":{"url":"api.github.com/pr"}}]
         if endpoint=="pulls":return [pr]
-        raise AssertionError(f"unexpected read endpoint: {endpoint}")
+        raise Denied("GitHub resource not found",404)
 
 
 class GitHubSourceTests(unittest.TestCase):
