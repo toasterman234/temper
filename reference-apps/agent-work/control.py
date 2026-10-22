@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 class WorkControl:
-    def __init__(self, file: str | Path):
+    def __init__(self, file: str | Path, gate=None):
+        self.gate = gate
         self.file = str(file)
         with self.connect() as db:
             db.executescript(SCHEMA)
@@ -87,6 +88,12 @@ class WorkControl:
         db.execute("INSERT INTO events(work_id,operation,actor,outcome,detail,recorded_at) VALUES(?,?,?,?,?,?)",
                    (work_id, operation, actor, outcome, json.dumps(detail, sort_keys=True), now()))
 
+    def authorize(self, **kw):
+        # Only the localhost HTTP entrypoint supplies a native guard. Calls
+        # from tests without one exercise Python invariants, not Temper policy.
+        if self.gate is not None:
+            self.gate.check(**kw)
+
     @staticmethod
     def get(db, work_id):
         require(work_id, "work_id")
@@ -111,6 +118,9 @@ class WorkControl:
         payload = {k: require(v, k) for k, v in locals().copy().items() if k != "self"}
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         with self.connect(write=True) as db:
+            self.authorize(role="agent", identity=payload["owner"],
+                           owner_ref=payload["owner"], status="Proposed",
+                           action="ProposeWork")
             old_request = db.execute("SELECT * FROM requests WHERE request_key=?", (payload["request_key"],)).fetchone()
             if old_request:
                 if old_request["fingerprint"] != fingerprint:
@@ -138,6 +148,9 @@ class WorkControl:
         with self.connect(write=True) as db:
             w=self.get(db,work_id);self.check_version(w,expected_version)
             if w["state"]!="proposed" or w["approval_id"]:raise Denied("work is not awaiting approval")
+            self.authorize(role="approver", identity=reviewer,
+                           owner_ref=w["owner"], status="Proposed",
+                           action="Approve", model_action="Approve")
             decision_id=str(uuid.uuid4())
             db.execute("INSERT INTO decisions VALUES(?,?,?,?,?)",(decision_id,work_id,reviewer,"accepted",now()))
             db.execute("UPDATE work SET approval_id=?,version=version+1,updated_at=? WHERE id=?",(decision_id,now(),work_id))
@@ -154,6 +167,18 @@ class WorkControl:
             if w["approval_id"] is None:raise Denied("accepted approval required")
             allowed={"proposed":{"active"},"active":{"blocked","awaiting"},"blocked":{"active"},"awaiting":{"active"}}
             if target not in allowed.get(w["state"],set()):raise Denied("illegal state transition")
+            model_state = "Approved" if w["state"] == "proposed" else w["state"].capitalize()
+            action_name = {
+                ("proposed", "active"): "Activate",
+                ("active", "blocked"): "Block",
+                ("active", "awaiting"): "Wait",
+                ("blocked", "active"): "ResumeBlocked",
+                ("awaiting", "active"): "ResumeWaiting",
+            }[(w["state"], target)]
+            self.authorize(role="agent", identity=actor,
+                           owner_ref=w["owner"], status=model_state,
+                           action="AdvanceWork", model_action=action_name,
+                           approved=True)
             db.execute("UPDATE work SET state=?,next_action=?,wake_condition=?,version=version+1,updated_at=? WHERE id=?",
                        (target,next_action,wake_condition,now(),work_id))
             self.record(db,work_id,"advance",actor,"accepted",{"from":w["state"],"to":target,"next_action":next_action,"wake_condition":wake_condition})
@@ -168,6 +193,9 @@ class WorkControl:
             w=self.get(db,work_id)
             if w["owner"]!=actor:raise Denied("actor is not assigned owner",403)
             if w["state"]!="active":raise Denied("work not active")
+            self.authorize(role="agent", identity=actor, owner_ref=w["owner"],
+                           status="Active", action="AttachEvidence",
+                           model_action="AttachEvidence", approved=True)
             ev_id=str(uuid.uuid4())
             db.execute("INSERT INTO evidence VALUES(?,?,?,?,?,?,?)",(ev_id,work_id,artifact_ref,artifact_sha256,target_key,expected_value,now()))
             self.record(db,work_id,"evidence",actor,"submitted",{"evidence":ev_id,"artifact_ref":artifact_ref})
@@ -188,6 +216,11 @@ class WorkControl:
             self.record(db,work_id,"verify",verifier,"passed" if valid else "failed",{"verification":verification_id,"evidence":evidence_id})
             if not valid:
                 return {"closed":False,"reason":"no matching fresh independent fixture observation","verification_id":verification_id,"work":obj(w)}
+            self.authorize(role="verifier", identity=verifier,
+                           owner_ref=w["owner"], status="Active",
+                           action="VerifyAndClose", model_action="Close",
+                           approved=True, evidence_present=True,
+                           independent_verification_passed=True)
             db.execute("UPDATE work SET state='completed',next_action='none',wake_condition=NULL,version=version+1,updated_at=? WHERE id=?",(now(),work_id))
             self.record(db,work_id,"close",verifier,"verified",{"verification":verification_id})
             return {"closed":True,"verification_id":verification_id,"work":obj(self.get(db,work_id))}
