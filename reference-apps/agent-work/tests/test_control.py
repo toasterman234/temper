@@ -1,4 +1,4 @@
-import hashlib, json, tempfile, threading, unittest, urllib.request, urllib.error
+import hashlib, json, os, tempfile, threading, unittest, urllib.request, urllib.error
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys_path.insert(0,str(ROOT))
 from control import WorkControl, Denied
 from api import credentials, handler_for
+from native_guard import NativeGate
 from http.server import ThreadingHTTPServer
 
 DIGEST=hashlib.sha256(b"artifact").hexdigest()
@@ -16,7 +17,8 @@ class PilotTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.file=str(Path(self.tmp.name)/"pilot.sqlite3")
-        self.app=WorkControl(self.file)
+        guard=NativeGate(os.environ["WORK_GUARD_BIN"]) if os.getenv("WORK_GUARD_BIN") else None
+        self.app=WorkControl(self.file,gate=guard)
     def tearDown(self):
         self.tmp.cleanup()
     def propose(self, **kwargs):
@@ -82,6 +84,15 @@ class PilotTests(unittest.TestCase):
             self.app.verify_and_close(work_id=w["id"],verifier="reviewer",expected_version=w["version"],evidence_id=evidence["evidence_id"])
         self.assertGreater(len(self.app.history(w["id"])),5)
 
+    def test_extra_guard_denial_prevents_any_write(self):
+        class DenyAll:
+            def check(self, **kwargs):
+                raise Denied("native gate denied", 403)
+        self.app.gate=DenyAll()
+        with self.assertRaisesRegex(Denied, "native gate denied"):
+            self.propose()
+        self.assertEqual(self.app.portfolio()["count"],0)
+
     def test_restart_and_idempotent_replay(self):
         p=self.propose()["work"]
         again=WorkControl(self.file).propose_work(title="Stop false Done",intent_key="false-done",source_ref="issue:1",
@@ -94,12 +105,13 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(t["automaton"]["name"],"WorkController")
         self.assertIn("independent_verification_passed",next(x["guard"] for x in t["action"] if x["name"]=="Close"))
         ET.parse(ROOT/"specs/model.csdl.xml")
-        self.assertIn("principal is Verifier",(ROOT/"specs/policies/work.cedar").read_text())
+        self.assertIn('principal.role == "verifier"',(ROOT/"specs/policies/work.cedar").read_text())
 
 class HttpTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
-        self.app=WorkControl(str(Path(self.tmp.name)/"pilot.sqlite3"))
+        guard=NativeGate(os.environ["WORK_GUARD_BIN"]) if os.getenv("WORK_GUARD_BIN") else None
+        self.app=WorkControl(str(Path(self.tmp.name)/"pilot.sqlite3"),gate=guard)
         self.tokens={"agent":"A"*32,"approver":"P"*32,"verifier":"V"*32}
         env={f"WORK_{k.upper()}_TOKEN":v for k,v in self.tokens.items()}
         env.update({"WORK_AGENT_ID":"pi","WORK_APPROVER_ID":"human","WORK_VERIFIER_ID":"reviewer"})
