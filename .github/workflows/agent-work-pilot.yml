@@ -27,6 +27,7 @@ jobs:
         working-directory: reference-apps/agent-work
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          WORK_GITHUB_READ_TOKEN: ${{ secrets.AGENT_WORK_GITHUB_READ_TOKEN }}
         run: |
           python3 - <<'PY'
           import os
@@ -40,7 +41,7 @@ jobs:
           summary=["# Agent Work GitHub read-only probe","",
                    f"- Temper PR #2: read OK; state={pr['state']}; draft={pr['draft']}"]
           try:
-              source=GitHubSource("toasterman234/master-repo-0.1",token=token)
+              source=GitHubSource("toasterman234/master-repo-0.1",token=os.environ.get("WORK_GITHUB_READ_TOKEN") or token)
               issue=source.issue("toasterman234/master-repo-0.1",76)
               summary.append(f"- master-repo-0.1 issue #76: accessible; state={issue['state']}")
           except Denied as e:
