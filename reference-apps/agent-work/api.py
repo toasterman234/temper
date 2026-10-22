@@ -4,6 +4,7 @@ import argparse
 import hmac
 import json
 import os
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -17,6 +18,40 @@ def credentials(env: dict[str, str]) -> dict[str, tuple[str, str]]:
     if any(len(token) < 24 for _, token, _ in items) or len({t for _, t, _ in items}) != 3:
         raise RuntimeError("Set three distinct WORK_AGENT_TOKEN, WORK_APPROVER_TOKEN and WORK_VERIFIER_TOKEN (24+ characters each)")
     return {name: (token, identity) for name, token, identity in items}
+
+def verify_network_and_storage(*, args, env, identities):
+    """Refuse a public bind or Northflank boot without durable storage and secrets.
+
+    Northflank terminates HTTPS at ingress; this container only serves HTTP
+    inside its network. Do not publish its container port directly on the host.
+    """
+    mode = env.get("WORK_DEPLOYMENT_MODE", "")
+    if mode not in ("", "northflank"):
+        raise RuntimeError("Unsupported WORK_DEPLOYMENT_MODE")
+    if mode != "northflank":
+        if args.bind not in {"127.0.0.1", "::1", "localhost"}:
+            raise RuntimeError("Outside Northflank the pilot must bind localhost")
+        return
+    if args.bind != "0.0.0.0":
+        raise RuntimeError("Northflank mode must bind 0.0.0.0 (behind its ingress)")
+    if args.port != 8765:
+        raise RuntimeError("Northflank mode requires container HTTP port 8765")
+    db_path = Path(args.db).resolve()
+    if db_path.parent != Path("/data"):
+        raise RuntimeError("Northflank SQLite WORK_DB must be directly under /data")
+    if not os.path.ismount("/data"):
+        raise RuntimeError("Northflank requires a persistent volume mounted at /data")
+    if not os.access("/data", os.W_OK):
+        raise RuntimeError("Northflank /data volume is not writable by the app user")
+    if any(len(token) < 32 for token, _ in identities.values()):
+        raise RuntimeError("Northflank role tokens must each be at least 32 characters")
+    if len({identity for _, identity in identities.values()}) != 3:
+        raise RuntimeError("Northflank agent/approver/verifier IDs must be distinct")
+    if not env.get("WORK_GITHUB_REPOS"):
+        raise RuntimeError("Set WORK_GITHUB_REPOS in Northflank")
+    if not env.get("WORK_GITHUB_READ_TOKEN"):
+        raise RuntimeError("Set WORK_GITHUB_READ_TOKEN in Northflank secrets")
+
 
 def handler_for(control: WorkControl, auth: dict[str, tuple[str, str]]):
     class Handler(BaseHTTPRequestHandler):
@@ -43,7 +78,12 @@ def handler_for(control: WorkControl, auth: dict[str, tuple[str, str]]):
         def do_GET(self):
             try:
                 if self.path == "/healthz":
-                    return self.respond(200, {"ok": True, "scope": "local-fixture-only"})
+                    try:
+                        with control.connect() as db:
+                            db.execute("SELECT 1").fetchone()
+                    except (sqlite3.Error, OSError):
+                        return self.respond(503, {"ok": False})
+                    return self.respond(200, {"ok": True, "scope": "agent-work-pilot"})
                 self.authenticate()
                 if self.path == "/portfolio":
                     return self.respond(200, control.portfolio())
@@ -127,6 +167,9 @@ def main():
     parser.add_argument("--key")
     parser.add_argument("--value")
     args=parser.parse_args()
+    if args.command=="serve":
+        auth=credentials(os.environ)
+        verify_network_and_storage(args=args, env=os.environ, identities=auth)
     control=WorkControl(args.db)
     if args.command=="fixture-target":
         if args.key is None or args.value is None:parser.error("fixture-target requires --key and --value")
@@ -135,9 +178,6 @@ def main():
         control.set_fixture_target(args.key,args.value)
         print(json.dumps({"fixture_target":args.key,"value":args.value,"scope":"local-only"}))
         return
-    if args.bind not in {"127.0.0.1","::1","localhost"}:
-        parser.error("pilot only permits localhost binding; do not expose it on the network")
-    auth=credentials(os.environ)
     # A running HTTP server always requires the compiled Temper gate.
     # Deliberately no permissive fallback: startup fails when missing.
     control.gate=NativeGate(os.environ.get("WORK_GUARD_BIN",""))
