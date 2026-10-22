@@ -72,6 +72,13 @@ from = ["Active"]
 effect = ["evidence_present = true"]
 
 [[action]]
+name = "RecordVerification"
+kind = "input"
+from = ["Active"]
+guard = "evidence_present"
+hint = "Record a failed or passed independent readback, without implying approval."
+
+[[action]]
 name = "AcceptIndependentVerification"
 kind = "input"
 from = ["Active"]
