@@ -73,11 +73,13 @@ For your own local instance:
 \`\`\`bash
 export WORK_GITHUB_REPOS="toasterman234/master-repo-0.1,toasterman234/temper"
 # Optional for public repositories; needed for private ones and higher rate limits:
-export GITHUB_TOKEN='<read-only fine-grained token>'
+export WORK_GITHUB_READ_TOKEN='<read-only fine-grained token>'
 # Alternative: GH_TOKEN from GitHub CLI credential flow in your environment.
 # The WORK_* role credentials and WORK_GUARD_BIN are still required.
 python3 api.py serve --bind 127.0.0.1 --port 8765
 \`\`\`
+
+For CI verification against a private `master-repo-0.1`, create a GitHub Actions **repository secret** on the Temper fork named `AGENT_WORK_GITHUB_READ_TOKEN` (Settings → Secrets and variables → Actions → New repository secret). The workflow will read it only for the GitHub probe, and still uses its built-in token for the Temper fork. This is **optional**: without the secret, the workflow reports the master repo as inaccessible but can still prove its Temper connection. Do not put a token in a file or chat.
 
 For a fine-grained PAT, use repository selection limited to the repositories above. Required repository permissions: **Metadata: read** (implicit), **Issues: read**, and **Pull requests: read**. This app does not need Contents write, Issues write, PR write, or Actions write. If you later deploy, store the token in the hosting provider's secret environment variable, not this repository.
 
