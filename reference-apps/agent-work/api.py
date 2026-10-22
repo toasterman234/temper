@@ -144,7 +144,7 @@ def main():
     if os.environ.get("WORK_GITHUB_REPOS"):
         control.github=GitHubSource(
             os.environ["WORK_GITHUB_REPOS"],
-            token=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN",""))
+            token=os.environ.get("WORK_GITHUB_READ_TOKEN") or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN",""))
     ThreadingHTTPServer((args.bind,args.port),handler_for(control,auth)).serve_forever()
 
 if __name__=="__main__":
