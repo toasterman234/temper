@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   python-pilot:
@@ -21,6 +23,33 @@ jobs:
       - name: Run isolated gateway tests
         working-directory: reference-apps/agent-work
         run: python -m unittest discover -s tests -v
+      - name: Live GitHub read-only source probe
+        working-directory: reference-apps/agent-work
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from github_source import GitHubSource
+          from control import Denied
+          token=os.environ["GITHUB_TOKEN"]
+          self_repo="toasterman234/temper"
+          connected=GitHubSource(self_repo,token=token)
+          pr=connected.pull(self_repo,2)
+          assert pr["number"]==2 and pr["repo"]==self_repo, pr
+          summary=["# Agent Work GitHub read-only probe","",
+                   f"- Temper PR #2: read OK; state={pr['state']}; draft={pr['draft']}"]
+          try:
+              source=GitHubSource("toasterman234/master-repo-0.1",token=token)
+              issue=source.issue("toasterman234/master-repo-0.1",76)
+              summary.append(f"- master-repo-0.1 issue #76: accessible; state={issue['state']}")
+          except Denied as e:
+              summary.append(f"- master-repo-0.1 issue #76: NOT accessible to this repository-scoped token ({e.reason})")
+              summary.append("- If master-repo is private, use a fine-grained read-only GitHub App/PAT token at runtime.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as out:
+              out.write("\n".join(summary)+"\n")
+          print("\n".join(summary))
+          PY
 
   temper-spec:
     name: Temper native model tests
