@@ -77,3 +77,92 @@ jobs:
         env:
           WORK_GUARD_BIN: ${{ github.workspace }}/target/debug/work_guard
         run: python3 -m unittest discover -s tests -v
+
+  northflank-container:
+    name: Northflank container build and persistence smoke
+    runs-on: ubuntu-latest
+    needs: python-pilot
+    timeout-minutes: 55
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build dedicated Agent Work image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: reference-apps/agent-work/Dockerfile
+          load: true
+          push: false
+          tags: agent-work:ci
+          cache-from: type=gha,scope=agent-work-northflank
+          cache-to: type=gha,scope=agent-work-northflank,mode=max
+      - name: Boot with persistent volume and prove state survives restart
+        env:
+          CI_VOLUME: agent-work-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker rm -f agent-work-ci >/dev/null 2>&1 || true
+            docker volume rm "$CI_VOLUME" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker volume create "$CI_VOLUME" >/dev/null
+          start_service() {
+            docker run -d --rm --name agent-work-ci \
+              --mount "type=volume,source=$CI_VOLUME,target=/data" \
+              -p 127.0.0.1:18765:8765 \
+              -e WORK_GITHUB_REPOS=toasterman234/temper \
+              -e WORK_GITHUB_READ_TOKEN=ci-read-token-placeholder \
+              -e WORK_AGENT_ID=pilot-agent \
+              -e WORK_APPROVER_ID=pilot-approver \
+              -e WORK_VERIFIER_ID=pilot-verifier \
+              -e WORK_AGENT_TOKEN=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \
+              -e WORK_APPROVER_TOKEN=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB \
+              -e WORK_VERIFIER_TOKEN=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC \
+              agent-work:ci >/dev/null
+            for attempt in $(seq 1 25); do
+              if curl --silent --show-error --fail http://127.0.0.1:18765/healthz >/dev/null 2>&1; then
+                return
+              fi
+              sleep 1
+            done
+            docker logs agent-work-ci || true
+            exit 1
+          }
+          start_service
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          base='http://127.0.0.1:18765'
+          with urllib.request.urlopen(base+'/healthz',timeout=5) as response:
+              assert response.status==200
+          try:
+              urllib.request.urlopen(base+'/portfolio',timeout=5)
+              raise AssertionError('unauthenticated portfolio must fail')
+          except urllib.error.HTTPError as exc:
+              assert exc.code==401
+          body={"title":"Northflank smoke","intent_key":"smoke-intent",
+                "source_ref":"fixture:smoke","parent_ref":"fixture:pilot",
+                "request_key":"smoke-1"}
+          request=urllib.request.Request(base+'/propose_work',method='POST',
+              data=json.dumps(body).encode(),headers={
+              'Authorization':'Bearer '+'A'*40,'Content-Type':'application/json'})
+          with urllib.request.urlopen(request,timeout=10) as response:
+              record=json.load(response)
+          assert record['disposition']=='NEW_PROPOSAL',record
+          assert record['work']['state']=='proposed',record
+          print('Created gated local Work with durable volume')
+          PY
+          docker rm -f agent-work-ci >/dev/null
+          start_service
+          python3 - <<'PY'
+          import json,urllib.request
+          request=urllib.request.Request('http://127.0.0.1:18765/portfolio',
+              headers={'Authorization':'Bearer '+'A'*40})
+          with urllib.request.urlopen(request,timeout=5) as response:
+              portfolio=json.load(response)
+          assert portfolio['count']==1,portfolio
+          assert portfolio['work'][0]['source_ref']=='fixture:smoke',portfolio
+          print('Persistent SQLite Work survived container restart')
+          PY
