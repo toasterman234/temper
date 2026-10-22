@@ -44,7 +44,7 @@ permit(
 
 permit(
     principal is Agent,
-    action == Action::"VerifyAndClose",
+    action in [Action::"RecordVerification", Action::"VerifyAndClose"],
     resource is WorkController
 ) when {
     principal.role == "verifier" &&
