@@ -51,6 +51,13 @@ def handler_for(control: WorkControl, auth: dict[str, tuple[str, str]]):
                     if control.github is None:
                         raise Denied("GitHub not configured",503)
                     return self.respond(200, control.github.portfolio())
+                if self.path.startswith("/github/related?"):
+                    if control.github is None:
+                        raise Denied("GitHub not configured",503)
+                    params=parse_qs(urlsplit(self.path).query)
+                    if set(params)!={"title"} or len(params["title"])!=1:
+                        raise Denied("expected one title parameter",400)
+                    return self.respond(200,control.github.related(params["title"][0]))
                 if self.path.startswith("/github/source?"):
                     if control.github is None:
                         raise Denied("GitHub not configured",503)
