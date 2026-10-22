@@ -211,6 +211,10 @@ class WorkControl:
             if ev is None:raise Denied("evidence missing or unrelated")
             target=db.execute("SELECT * FROM fixture_targets WHERE target_key=?",(ev["target_key"],)).fetchone()
             valid=bool(target and target["observed_value"]==ev["expected_value"] and target["observed_at"]>=ev["submitted_at"])
+            self.authorize(role="verifier", identity=verifier,
+                           owner_ref=w["owner"], status="Active",
+                           action="RecordVerification", model_action="RecordVerification",
+                           approved=True, evidence_present=True)
             verification_id=str(uuid.uuid4())
             db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?)",(verification_id,work_id,evidence_id,verifier,"passed" if valid else "failed",target["observed_value"] if target else None,now()))
             self.record(db,work_id,"verify",verifier,"passed" if valid else "failed",{"verification":verification_id,"evidence":evidence_id})
