@@ -1,0 +1,19 @@
+[package]
+name = "agent-work-reference"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+description = "Temper verification model for isolated governed agent-work pilot"
+
+[dependencies]
+temper-jit = { path = "../../crates/temper-jit" }
+temper-authz = { path = "../../crates/temper-authz" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+temper-runtime = { path = "../../crates/temper-runtime" }
+temper-server = { path = "../../crates/temper-server" }
+temper-spec = { path = "../../crates/temper-spec" }
+temper-verify = { path = "../../crates/temper-verify" }

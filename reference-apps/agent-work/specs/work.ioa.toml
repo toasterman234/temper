@@ -1,0 +1,106 @@
+# Temper reference automaton; gateway code in control.py is a separate, isolated effect boundary.
+[automaton]
+name = "WorkController"
+states = ["Proposed", "Approved", "Active", "Blocked", "Awaiting", "Completed", "Rejected"]
+initial = "Proposed"
+terminal = ["Completed", "Rejected"]
+
+[[state]]
+name = "approved"
+type = "bool"
+initial = false
+
+[[state]]
+name = "evidence_present"
+type = "bool"
+initial = false
+
+[[state]]
+name = "independent_verification_passed"
+type = "bool"
+initial = false
+
+[[action]]
+name = "Approve"
+kind = "input"
+from = ["Proposed"]
+to = "Approved"
+effect = ["approved = true"]
+hint = "Only an authenticated trusted approver may invoke; IOA does not authenticate actors."
+
+[[action]]
+name = "Reject"
+kind = "input"
+from = ["Proposed"]
+to = "Rejected"
+
+[[action]]
+name = "Activate"
+kind = "input"
+from = ["Approved"]
+to = "Active"
+guard = "approved"
+
+[[action]]
+name = "Block"
+kind = "input"
+from = ["Active"]
+to = "Blocked"
+
+[[action]]
+name = "Wait"
+kind = "input"
+from = ["Active"]
+to = "Awaiting"
+
+[[action]]
+name = "ResumeBlocked"
+kind = "input"
+from = ["Blocked"]
+to = "Active"
+
+[[action]]
+name = "ResumeWaiting"
+kind = "input"
+from = ["Awaiting"]
+to = "Active"
+
+[[action]]
+name = "AttachEvidence"
+kind = "input"
+from = ["Active"]
+effect = ["evidence_present = true"]
+
+[[action]]
+name = "RecordVerification"
+kind = "input"
+from = ["Active"]
+guard = "evidence_present"
+hint = "Record a failed or passed independent readback, without implying approval."
+
+[[action]]
+name = "AcceptIndependentVerification"
+kind = "input"
+from = ["Active"]
+guard = "evidence_present"
+effect = ["independent_verification_passed = true"]
+hint = "Authenticated verifier after independent target observation only."
+
+[[action]]
+name = "Close"
+kind = "input"
+from = ["Active"]
+to = "Completed"
+guard = "approved && evidence_present && independent_verification_passed"
+
+[[invariant]]
+name = "NeverCompleteWithoutApproval"
+assert = "status in ['Approved', 'Active', 'Blocked', 'Awaiting', 'Completed'] => approved"
+
+[[invariant]]
+name = "NeverCompleteWithoutEvidence"
+assert = "status in ['Completed'] => evidence_present"
+
+[[invariant]]
+name = "NeverCompleteWithoutVerification"
+assert = "status in ['Completed'] => independent_verification_passed"
