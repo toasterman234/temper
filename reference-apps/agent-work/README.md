@@ -1,6 +1,6 @@
 # Agent Work & Anti-Sprawl — executable local pilot
 
-This is a **working, isolated HTTP/SQLite service** with Temper IOA/CSDL/Cedar reference specifications and native verification tests. The Python service enforces its own concrete local lifecycle/role checks; **it does not yet run inside Temper or evaluate the Cedar file**. It does not connect to, mutate or claim authority over Pi, Muse, GitHub, master-repo PostgreSQL, or other services.
+This is an **isolated HTTP/SQLite pilot** with a **required native Temper Rust authorization process** on all HTTP mutations. The process evaluates the live `work.cedar` policy using Temper's `temper-authz` library and legal model transitions using Temper's `temper-jit` I/O-automaton table. Python still owns the local SQLite write, idempotency and fixture verification checks. It does not connect to, mutate, or claim authority over Pi, Muse, GitHub, master-repo PostgreSQL, or other services.
 
 ## Current capabilities
 
@@ -20,6 +20,9 @@ export WORK_AGENT_ID=pi WORK_APPROVER_ID=human WORK_VERIFIER_ID=independent-revi
 export WORK_AGENT_TOKEN='<random 24+ character secret>'
 export WORK_APPROVER_TOKEN='<different random 24+ character secret>'
 export WORK_VERIFIER_TOKEN='<third different random 24+ character secret>'
+# Compile Temper Cedar + state machine decision guard before starting the API.
+cargo build -p agent-work-reference --bin work_guard
+export WORK_GUARD_BIN="$(git rev-parse --show-toplevel)/target/debug/work_guard"
 python3 api.py serve --bind 127.0.0.1 --port 8765
 ```
 
@@ -65,15 +68,20 @@ The target key and expected value must match the evidence. The fixture setter is
 
 ```bash
 python3 -m unittest discover -s tests -v
-cargo test -p agent-work-reference --test temper_work
+cargo test -p agent-work-reference
+cargo build -p agent-work-reference --bin work_guard
+WORK_GUARD_BIN="$(git rev-parse --show-toplevel)/target/debug/work_guard" \
+  python3 -m unittest discover -s tests -v
 # Once a compatible Temper executable is built:
 temper verify --specs-dir reference-apps/agent-work/specs
 ```
 
-Python tests execute real HTTP authorization, concurrency/idempotency, SQLite, false-Done denial and restart durability. Rust tests use Temper's verification cascade and deterministic simulated actor path (separate from the Python effect boundary). The Cedar file is **candidate policy, not effective enforcement**.
+Python tests exercise HTTP authentication, idempotency, SQLite, false-Done denial, and restart durability; the second run executes those HTTP tests with the **compiled Temper Cedar + IOA guard actually required in each mutation transaction**. Rust tests separately run the Temper verification cascade, deterministic simulation, direct Cedar/IOA decision cases, and malformed-request fail-closed behavior.
+
+There is no permissive HTTP fallback if `WORK_GUARD_BIN` is unset/unavailable. Fixture observations remain local and manually inserted; native policy enforcement **does not prove external GitHub state**.
 
 ## Boundaries / work remaining
 
-This is a local pilot, **not** the complete Temper-based governance application. Integration of the Temper actor/Cedar decision with the actual local mutation path, trustworthy GitHub/Pi/Muse source retrieval, semantic duplication/history detection, real independent external readback, distributed liveness, and bypass coverage are still needed. Retain master-repo-0.1's canonical schema, Progress Controller and Transition Controller ownership until any migration is explicitly decided. Nothing has been deployed.
+This is a local pilot, **not** the complete Temper-based governance application. The local HTTP mutation path now invokes Temper Cedar and IOA, but **the runtime is not yet a Temper-hosted actor**, and a direct Python `WorkControl` instance without a native gate remains possible outside the supported HTTP entrypoint. Trusted GitHub/Pi/Muse source retrieval, semantic/history matching, external authoritative read-back, durable distributed liveness, network-grade authentication, and total mutation-path bypass coverage are still needed. Retain master-repo-0.1's canonical schema, Progress Controller and Transition Controller ownership until any migration is explicitly decided. Nothing has been deployed.
 
 Design and ownership: [Exploration PR #1](https://github.com/toasterman234/temper/pull/1), [master-repo issue #27](https://github.com/toasterman234/master-repo-0.1/issues/27), [#76](https://github.com/toasterman234/master-repo-0.1/issues/76).
