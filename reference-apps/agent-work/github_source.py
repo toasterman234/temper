@@ -133,7 +133,10 @@ class GitHubSource:
             return None
         repo,kind,num=match.groups()
         repo=self.configured(repo)
-        return self.issue(repo,int(num)) if kind=="issues" else self.pull(repo,int(num))
+        observed = self.issue(repo,int(num)) if kind=="issues" else self.pull(repo,int(num))
+        if observed["kind"] != ("issue" if kind=="issues" else "pull_request"):
+            raise Denied("GitHub source kind mismatch; issue endpoint refers to a pull request",400)
+        return observed
 
     def portfolio(self):
         data=[]
@@ -165,6 +168,30 @@ class GitHubSource:
             "closed_at":item.get("closed_at"),"url":item.get("html_url"),
             "assignee":(item.get("assignee") or {}).get("login"),
         }
+
+    def related(self,title):
+        # Candidate discovery, not an authority or automatic dedupe verdict.
+        if not isinstance(title,str) or not (3<=len(title)<=200):
+            raise Denied("title must contain 3-200 characters",400)
+        stop={"the","and","for","with","from","agent","work","issue","project","new","about","into","this","that","when","what","how"}
+        def terms(value):
+            return {w for w in re.findall(r"[a-z0-9]{3,}", (value or "").lower()) if w not in stop}
+        wanted=terms(title)
+        if not wanted: return {"title":title,"candidates":[],"method":"token_overlap","incomplete":True}
+        portfolio=self.portfolio()
+        ranked=[]
+        for item in portfolio["items"]:
+            found=terms(item["title"])
+            intersection=wanted & found
+            if not intersection:continue
+            score=len(intersection)/max(len(wanted),len(found),1)
+            if score>=0.25:
+                ranked.append({"source":item,"overlap_score":round(score,3),
+                               "matched_terms":sorted(intersection),"disposition":"REVIEW_SIMILARITY_ONLY"})
+        ranked.sort(key=lambda x:(-x["overlap_score"],x["source"]["source_ref"]))
+        return {"title":title,"candidates":ranked[:10],"method":"bounded_token_overlap",
+                "incomplete":True,"coverage_note":portfolio["coverage_note"],
+                "not_authority":"similarity cannot authorize merge, denial, or new project"}
 
     def observe_target(self,target_key):
         source=self.source(target_key)
