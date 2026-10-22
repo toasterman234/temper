@@ -75,6 +75,9 @@ class GitHubSource:
                     raise Denied("GitHub response too large", 502)
                 return json.loads(raw)
         except urllib.error.HTTPError as e:
+            if e.code == 410 and endpoint == "issues":
+                # Some repos (including this fork) have Issues disabled.
+                return {"issues_disabled":True}
             if e.code == 404: raise Denied("GitHub resource not found or inaccessible", 404)
             if e.code in (401, 403): raise Denied("GitHub permission or rate-limit denied", 503)
             raise Denied(f"GitHub API returned HTTP {e.code}", 502)
@@ -140,11 +143,15 @@ class GitHubSource:
 
     def portfolio(self):
         data=[]
+        limitations=[]
         for repo in self.repos:
             # GitHub issues endpoint also returns PRs. De-duplicate those
             # against the dedicated PR endpoint by source_ref.
             issues=self.get(repo,"issues",{"state":"all","per_page":ITEM_LIMIT,"page":1})
             pulls=self.get(repo,"pulls",{"state":"all","per_page":ITEM_LIMIT,"page":1})
+            if isinstance(issues,dict) and issues.get("issues_disabled") is True:
+                limitations.append(f"{repo}: Issues disabled; only pull requests checked")
+                issues=[]
             if not isinstance(issues,list) or not isinstance(pulls,list):
                 raise Denied("invalid GitHub collection response",502)
             items=[self.normalize_issue(repo,x) for x in issues if not x.get("pull_request")]
@@ -152,7 +159,7 @@ class GitHubSource:
             data.extend(items)
         return {
             "observed_at":timestamp(), "repositories":list(self.repos), "count":len(data),
-            "items":data, "incomplete":True,
+            "items":data, "incomplete":True, "limitations":limitations,
             "coverage_note":f"latest {ITEM_LIMIT} issues and {ITEM_LIMIT} PRs per repo, ordered by GitHub API default; not a complete historical inventory",
             "authority":"GitHub source observations, not canonical Issue lifecycle or approvals",
         }
