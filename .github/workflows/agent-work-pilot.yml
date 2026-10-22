@@ -40,5 +40,12 @@ jobs:
           toolchain: nightly-2026-02-08
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Temper cascade and simulation
-        run: cargo test -p agent-work-reference --test temper_work
+      - name: Temper cascade, Cedar and IOA decision tests
+        run: cargo test -p agent-work-reference
+      - name: Build native guard executable
+        run: cargo build -p agent-work-reference --bin work_guard
+      - name: HTTP tests through actual Temper policy gate
+        working-directory: reference-apps/agent-work
+        env:
+          WORK_GUARD_BIN: ${{ github.workspace }}/target/debug/work_guard
+        run: python3 -m unittest discover -s tests -v
