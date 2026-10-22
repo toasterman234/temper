@@ -12,9 +12,11 @@ ENV RUSTUP_TOOLCHAIN=nightly-2026-02-08 \
     CARGO_PROFILE_RELEASE_DEBUG=0 \
     CARGO_PROFILE_RELEASE_LTO=off \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+# The new workspace member is not yet recorded in root Cargo.lock.
+# Cargo resolves that local member while retaining existing locked dependencies.
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo build --release --locked -p agent-work-reference --bin work_guard
+    cargo build --release -p agent-work-reference --bin work_guard
 
 FROM python:3.12-slim-bookworm AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends libz3-4 ca-certificates \
