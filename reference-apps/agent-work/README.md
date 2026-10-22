@@ -1,4 +1,6 @@
-# Agent Work & Anti-Sprawl — executable local pilot
+# Agent Work & Anti-Sprawl — native-guarded pilot
+
+**Northflank deployment:** [Exact configuration and security prerequisites](./NORTHFLANK.md). Select branch `work/agent-work-pilot`, repository-root build context, and Dockerfile `/reference-apps/agent-work/Dockerfile`; **do not use the root Dockerfile**.
 
 This is an **isolated HTTP/SQLite pilot** with a **required native Temper Rust authorization process** on all HTTP mutations. The process evaluates the live `work.cedar` policy using Temper's `temper-authz` library and legal model transitions using Temper's `temper-jit` I/O-automaton table. Python still owns the local SQLite write, idempotency and fixture verification checks. It does not connect to, mutate, or claim authority over Pi, Muse, GitHub, master-repo PostgreSQL, or other services.
 
@@ -26,7 +28,7 @@ export WORK_GUARD_BIN="$(git rev-parse --show-toplevel)/target/debug/work_guard"
 python3 api.py serve --bind 127.0.0.1 --port 8765
 ```
 
-Keep it **localhost only**. It has no TLS, production identity federation, configurable multi-user permissions, external mutator or server-side scheduling. Never commit tokens.
+For local development keep it **localhost only**. The Northflank container uses explicit deployment-mode validation and Northflank's managed ingress, with a mandatory persistent volume. It still lacks production identity federation, GitHub mutations, and a scheduler. Never commit tokens.
 
 | Method | Endpoint | Authorized role |
 |---|---|---|
@@ -115,6 +117,6 @@ There is no permissive HTTP fallback if `WORK_GUARD_BIN` is unset/unavailable. F
 
 ## Boundaries / work remaining
 
-This is a local pilot, **not** the complete Temper-based governance application. The local HTTP mutation path now invokes Temper Cedar and IOA, but **the runtime is not yet a Temper-hosted actor**, and a direct Python `WorkControl` instance without a native gate remains possible outside the supported HTTP entrypoint. Trusted GitHub/Pi/Muse source retrieval, semantic/history matching, external authoritative read-back, durable distributed liveness, network-grade authentication, and total mutation-path bypass coverage are still needed. Retain master-repo-0.1's canonical schema, Progress Controller and Transition Controller ownership until any migration is explicitly decided. Nothing has been deployed.
+This is a pilot deployment package, **not** the complete Temper-based governance application. The local HTTP mutation path now invokes Temper Cedar and IOA, but **the runtime is not yet a Temper-hosted actor**, and a direct Python `WorkControl` instance without a native gate remains possible outside the supported HTTP entrypoint. Trusted GitHub/Pi/Muse source retrieval, semantic/history matching, external authoritative read-back, durable distributed liveness, network-grade authentication, and total mutation-path bypass coverage are still needed. Retain master-repo-0.1's canonical schema, Progress Controller and Transition Controller ownership until any migration is explicitly decided. The Northflank image is prepared, but deployment must be explicitly created and verified in Northflank.
 
 Design and ownership: [Exploration PR #1](https://github.com/toasterman234/temper/pull/1), [master-repo issue #27](https://github.com/toasterman234/master-repo-0.1/issues/27), [#76](https://github.com/toasterman234/master-repo-0.1/issues/76).
