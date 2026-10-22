@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 class WorkControl:
-    def __init__(self, file: str | Path, gate=None):
+    def __init__(self, file: str | Path, gate=None, github=None):
+        self.github = github
         self.gate = gate
         self.file = str(file)
         with self.connect() as db:
@@ -115,7 +116,20 @@ class WorkControl:
             return {"count": len(works), "work": works, "warning": "local pilot state, not canonical or live GitHub"}
 
     def propose_work(self, *, title, intent_key, source_ref, parent_ref, owner, request_key):
-        payload = {k: require(v, k) for k, v in locals().copy().items() if k != "self"}
+        payload = {k: require(v, k) for k, v in locals().copy().items() if k not in ("self",)}
+        # If the intended source already exists on GitHub, don't invent an
+        # independent local Work record. Return a linked external disposition.
+        # GitHub fetch errors/unknown scope fail closed; no "not found" guess.
+        if payload["source_ref"].startswith("github:"):
+            if self.github is None:
+                raise Denied("GitHub connector unavailable", 503)
+            existing = self.github.source(payload["source_ref"])
+            if existing is not None:
+                self.authorize(role="agent", identity=payload["owner"],
+                               owner_ref=payload["owner"], status="Proposed",
+                               action="ProposeWork")
+                return {"disposition": "EXISTING_GITHUB", "source":existing,
+                        "work":None, "reason":"source already exists; no local duplicate created"}
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         with self.connect(write=True) as db:
             self.authorize(role="agent", identity=payload["owner"],
@@ -209,7 +223,14 @@ class WorkControl:
             if verifier==w["owner"]:raise Denied("independent verifier required",403)
             ev=db.execute("SELECT * FROM evidence WHERE id=? AND work_id=?",(evidence_id,work_id)).fetchone()
             if ev is None:raise Denied("evidence missing or unrelated")
-            target=db.execute("SELECT * FROM fixture_targets WHERE target_key=?",(ev["target_key"],)).fetchone()
+            target_key=ev["target_key"]
+            if target_key.startswith("github:"):
+                if self.github is None:
+                    raise Denied("GitHub connector unavailable for independent readback",503)
+                target=self.github.observe_target(target_key)
+            else:
+                row=db.execute("SELECT * FROM fixture_targets WHERE target_key=?",(target_key,)).fetchone()
+                target=dict(row) if row else None
             valid=bool(target and target["observed_value"]==ev["expected_value"] and target["observed_at"]>=ev["submitted_at"])
             self.authorize(role="verifier", identity=verifier,
                            owner_ref=w["owner"], status="Active",
@@ -219,7 +240,7 @@ class WorkControl:
             db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?)",(verification_id,work_id,evidence_id,verifier,"passed" if valid else "failed",target["observed_value"] if target else None,now()))
             self.record(db,work_id,"verify",verifier,"passed" if valid else "failed",{"verification":verification_id,"evidence":evidence_id})
             if not valid:
-                return {"closed":False,"reason":"no matching fresh independent fixture observation","verification_id":verification_id,"work":obj(w)}
+                return {"closed":False,"reason":"no matching fresh independent target observation","verification_id":verification_id,"work":obj(w)}
             self.authorize(role="verifier", identity=verifier,
                            owner_ref=w["owner"], status="Active",
                            action="VerifyAndClose", model_action="Close",
