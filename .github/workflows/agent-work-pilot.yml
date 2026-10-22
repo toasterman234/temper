@@ -1,8 +1,6 @@
 name: Agent Work Pilot
 
 on:
-  push:
-    branches: [work/agent-work-pilot]
   pull_request:
     branches: [explore/governed-agent-app, main]
   workflow_dispatch:
