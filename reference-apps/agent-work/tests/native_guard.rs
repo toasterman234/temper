@@ -54,6 +54,16 @@ fn independent_verifier_cannot_skip_evidence_or_gate() {
 }
 
 #[test]
+fn verification_outcome_record_is_guarded_even_when_not_closed() {
+    assert!(probe("verifier","reviewer","pi","Active","RecordVerification",
+                  Some("RecordVerification"),true,true,false).0);
+    assert!(!probe("agent","pi","pi","Active","RecordVerification",
+                   Some("RecordVerification"),true,true,false).0);
+    assert!(!probe("verifier","reviewer","pi","Active","RecordVerification",
+                   Some("RecordVerification"),true,false,false).0);
+}
+
+#[test]
 fn complete_and_invalid_model_actions_fail_closed() {
     assert!(!probe("agent","pi","pi","Completed","AdvanceWork",Some("Activate"),true,true,true).0);
     assert!(!probe("agent","pi","pi","Active","AdvanceWork",Some("Unknown"),true,false,false).0);
