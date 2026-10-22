@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::io::{self, Read};
 
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use temper_authz::{AuthzEngine, Principal, PrincipalKind, SecurityContext};
 use temper_jit::{EvalContext, TransitionTable};
 
