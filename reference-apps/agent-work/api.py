@@ -6,7 +6,9 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit, parse_qs
 from control import Denied, WorkControl
+from github_source import GitHubSource
 from native_guard import NativeGate
 
 def credentials(env: dict[str, str]) -> dict[str, tuple[str, str]]:
@@ -45,6 +47,20 @@ def handler_for(control: WorkControl, auth: dict[str, tuple[str, str]]):
                 self.authenticate()
                 if self.path == "/portfolio":
                     return self.respond(200, control.portfolio())
+                if self.path == "/github/portfolio":
+                    if control.github is None:
+                        raise Denied("GitHub not configured",503)
+                    return self.respond(200, control.github.portfolio())
+                if self.path.startswith("/github/source?"):
+                    if control.github is None:
+                        raise Denied("GitHub not configured",503)
+                    params=parse_qs(urlsplit(self.path).query)
+                    if set(params)!={"ref"} or len(params["ref"])!=1:
+                        raise Denied("expected one ref parameter",400)
+                    source=control.github.source(params["ref"][0])
+                    if source is None:
+                        raise Denied("not a GitHub source",400)
+                    return self.respond(200, {"source":source,"observed_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
                 if self.path.startswith("/history/"):
                     return self.respond(200, {"events": control.history(self.path.removeprefix("/history/"))})
                 raise Denied("unknown endpoint",404)
@@ -107,6 +123,8 @@ def main():
     control=WorkControl(args.db)
     if args.command=="fixture-target":
         if args.key is None or args.value is None:parser.error("fixture-target requires --key and --value")
+        if args.key.startswith("github:"):
+            parser.error("fixture setter cannot spoof GitHub source observations")
         control.set_fixture_target(args.key,args.value)
         print(json.dumps({"fixture_target":args.key,"value":args.value,"scope":"local-only"}))
         return
@@ -116,6 +134,10 @@ def main():
     # A running HTTP server always requires the compiled Temper gate.
     # Deliberately no permissive fallback: startup fails when missing.
     control.gate=NativeGate(os.environ.get("WORK_GUARD_BIN",""))
+    if os.environ.get("WORK_GITHUB_REPOS"):
+        control.github=GitHubSource(
+            os.environ["WORK_GITHUB_REPOS"],
+            token=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN",""))
     ThreadingHTTPServer((args.bind,args.port),handler_for(control,auth)).serve_forever()
 
 if __name__=="__main__":
