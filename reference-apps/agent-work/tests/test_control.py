@@ -68,13 +68,13 @@ class PilotTests(unittest.TestCase):
     def test_false_done_fails_until_fresh_independent_observation(self):
         w=self.active()
         evidence=self.app.add_evidence(work_id=w["id"],actor="pi",artifact_ref="git:abc",
-            artifact_sha256=DIGEST,target_key="github:pr",expected_value="merged")
+            artifact_sha256=DIGEST,target_key="fixture:pr",expected_value="merged")
         self.assertFalse(self.app.verify_and_close(work_id=w["id"],verifier="reviewer",
             expected_version=w["version"],evidence_id=evidence["evidence_id"])["closed"])
-        self.app.set_fixture_target("github:pr","draft")
+        self.app.set_fixture_target("fixture:pr","draft")
         self.assertFalse(self.app.verify_and_close(work_id=w["id"],verifier="reviewer",
             expected_version=w["version"],evidence_id=evidence["evidence_id"])["closed"])
-        self.app.set_fixture_target("github:pr","merged")
+        self.app.set_fixture_target("fixture:pr","merged")
         with self.assertRaisesRegex(Denied,"independent verifier"):
             self.app.verify_and_close(work_id=w["id"],verifier="pi",expected_version=w["version"],evidence_id=evidence["evidence_id"])
         result=self.app.verify_and_close(work_id=w["id"],verifier="reviewer",expected_version=w["version"],evidence_id=evidence["evidence_id"])
