@@ -64,6 +64,37 @@ python3 api.py fixture-target --db "$WORK_DB" --key 'repo:demo' --value merged
 
 The target key and expected value must match the evidence. The fixture setter is intentionally absent from HTTP. This verifies local control logic only, not an external change.
 
+## GitHub connection — live reads, never GitHub writes
+
+The existing ChatGPT GitHub connector **cannot transfer its secret credentials to this standalone app**. The app connects through GitHub's REST API with a **separate read-only token** supplied at runtime. Do not paste secrets into chat or commit them.
+
+For your own local instance:
+
+\`\`\`bash
+export WORK_GITHUB_REPOS="toasterman234/master-repo-0.1,toasterman234/temper"
+# Optional for public repositories; needed for private ones and higher rate limits:
+export GITHUB_TOKEN='<read-only fine-grained token>'
+# Alternative: GH_TOKEN from GitHub CLI credential flow in your environment.
+# The WORK_* role credentials and WORK_GUARD_BIN are still required.
+python3 api.py serve --bind 127.0.0.1 --port 8765
+\`\`\`
+
+For a fine-grained PAT, use repository selection limited to the repositories above. Required repository permissions: **Metadata: read** (implicit), **Issues: read**, and **Pull requests: read**. This app does not need Contents write, Issues write, PR write, or Actions write. If you later deploy, store the token in the hosting provider's secret environment variable, not this repository.
+
+At present, **GitHub Actions itself** can use the ephemeral \`GITHUB_TOKEN\` to read this fork without creating a PAT. That Actions token does not generally grant access to a **different private repo**. The workflow's live-read probe reports whether it could read \`master-repo-0.1\`. Do not interpret a successful same-repo probe as authorization to all private repositories.
+
+HTTP endpoints (all GET and authenticated using the existing local pilot role token):
+
+- \`/github/portfolio\` — source-observed issues and PRs with source URLs, state, assignee, labels and timestamps; capped to **40 recent issues and 40 PRs per configured repo**. This is deliberately **incomplete history**, not a canonical Work state.
+- \`/github/source?ref=github:toasterman234/master-repo-0.1/issues/76\` — exact issue source lookup; for PRs use \`github:owner/repo/pulls/358\`.
+- \`/github/related?title=agent%20closure%20verification\` — tentative bounded token-overlap matches; never automatically merges two different tasks or denies a creation.
+- \`/propose_work\` with \`source_ref=github:owner/repo/issues/number\` or \`.../pulls/number\` — if the reference exists, returns \`EXISTING_GITHUB\` **without creating another local Work record**. It does not import authoritative state or change the linked GitHub item.
+- \`/verify_and_close\`: a submitted evidence \`target_key\` formatted \`github:owner/repo/issues/number\` or \`.../pulls/number\` invokes a **fresh GET from the GitHub API**, not the local fixture database. \`expected_value\` supports \`open\`/\`closed\` for issues; PRs support \`open\`/\`closed\`/\`merged\`. A mismatched or unavailable read keeps local Work open. This proves the specified GitHub state at observation time, **not** general task completion or the validity of a claimed SHA-256 artifact.
+
+The only GitHub API calls are GETs to a fixed \`https://api.github.com/repos/\` host, with allowlisted repo names, numeric issue/PR IDs, bounded queries, fixed timeout, and capped responses. Nothing creates/updates/closes a GitHub Issue or PR.
+
+Known operational limits: the live-read probe is periodic/on-demand, not a continuously connected worker; no production deployment, webhook intake, long-history pagination, semantic deduplication, or cross-source canonical sync yet. It is suitable for demonstrating real source provenance and deny-on-unknown readback, not for claiming the whole agent fleet is governed.
+
 ## Tests
 
 ```bash
