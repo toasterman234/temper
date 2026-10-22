@@ -238,7 +238,13 @@ class WorkControl:
                            approved=True, evidence_present=True)
             verification_id=str(uuid.uuid4())
             db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?)",(verification_id,work_id,evidence_id,verifier,"passed" if valid else "failed",target["observed_value"] if target else None,now()))
-            self.record(db,work_id,"verify",verifier,"passed" if valid else "failed",{"verification":verification_id,"evidence":evidence_id})
+            self.record(db,work_id,"verify",verifier,"passed" if valid else "failed",
+                        {"verification":verification_id,"evidence":evidence_id,
+                         "target_key":target_key,
+                         "provider":target.get("provider", "local_fixture") if target else "unknown",
+                         "source_url":target.get("source_url") if target else None,
+                         "source_updated_at":target.get("source_updated_at") if target else None,
+                         "observed_at":target.get("observed_at") if target else None})
             if not valid:
                 return {"closed":False,"reason":"no matching fresh independent target observation","verification_id":verification_id,"work":obj(w)}
             self.authorize(role="verifier", identity=verifier,
