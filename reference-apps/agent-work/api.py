@@ -7,6 +7,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from control import Denied, WorkControl
+from native_guard import NativeGate
 
 def credentials(env: dict[str, str]) -> dict[str, tuple[str, str]]:
     items = [(name, env.get(f"WORK_{name.upper()}_TOKEN", ""), env.get(f"WORK_{name.upper()}_ID", name))
@@ -112,6 +113,9 @@ def main():
     if args.bind not in {"127.0.0.1","::1","localhost"}:
         parser.error("pilot only permits localhost binding; do not expose it on the network")
     auth=credentials(os.environ)
+    # A running HTTP server always requires the compiled Temper gate.
+    # Deliberately no permissive fallback: startup fails when missing.
+    control.gate=NativeGate(os.environ.get("WORK_GUARD_BIN",""))
     ThreadingHTTPServer((args.bind,args.port),handler_for(control,auth)).serve_forever()
 
 if __name__=="__main__":
