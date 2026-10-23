@@ -40,4 +40,4 @@ ENV RUST_LOG=info,temper=info
 EXPOSE 3000
 
 # No ENTRYPOINT — Railway's startCommand provides the full command.
-CMD ["sh", "-c", "export TEMPER_TRUSTED_ISSUER_URL=https://temper.ben.local TEMPER_TRUSTED_ISSUER_AUD=temper TEMPER_TRUSTED_ISSUER_JWKS=$(cat /os-apps/incident-rca/deployment/issuer-jwks.json); exec temper serve --port 3000 --storage turso --app incident-rca=/os-apps/incident-rca"]
+CMD ["sh", "-c", "mkdir -p /data/temper && export TURSO_URL=file:/data/temper/agents.db TEMPER_TRUSTED_ISSUER_URL=https://temper.ben.local TEMPER_TRUSTED_ISSUER_AUD=temper TEMPER_TRUSTED_ISSUER_JWKS=$(cat /os-apps/incident-rca/deployment/issuer-jwks.json); exec temper serve --port 3000 --storage turso --app incident-rca=/os-apps/incident-rca"]
